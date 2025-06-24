@@ -1,0 +1,78 @@
+[gd_scene load_steps=9 format=3 uid="uid://bnj2btpr6i46x"]
+
+[ext_resource type="Script" uid="uid://bviw5ixl5saju" path="res://Scripts/Managers/Game_Manager.gd" id="1_jluj8"]
+[ext_resource type="PackedScene" uid="uid://c56ex3213akv1" path="res://Scenes/Player/player.tscn" id="1_q7hsi"]
+[ext_resource type="Script" uid="uid://b1lefkacyegvp" path="res://Scripts/Managers/replay_manager.gd" id="2_4rjg2"]
+
+[sub_resource type="Gradient" id="Gradient_4rjg2"]
+offsets = PackedFloat32Array(0, 0.311688, 0.720779, 1)
+colors = PackedColorArray(0.572669, 1.02278e-06, 1.92523e-07, 1, 0.3034, 0.219101, 4.81308e-08, 1, 6.61798e-07, 0.238659, 0.211337, 1, 0.203598, 0.183618, 0.435721, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_jluj8"]
+gradient = SubResource("Gradient_4rjg2")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_q7hsi"]
+
+[sub_resource type="Gradient" id="Gradient_q7hsi"]
+colors = PackedColorArray(0.20868, 2.00043e-07, 2.40654e-08, 1, 0, 0.158089, 0.158089, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_4rjg2"]
+gradient = SubResource("Gradient_q7hsi")
+
+[node name="Tutorial" type="Node2D"]
+script = ExtResource("1_jluj8")
+
+[node name="Player" parent="." instance=ExtResource("1_q7hsi")]
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(0, 1150)
+scale = Vector2(200, 30)
+texture = SubResource("GradientTexture2D_jluj8")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="Sprite2D"]
+position = Vector2(-3.05176e-06, 3.05176e-06)
+scale = Vector2(3.2, 3.2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Sprite2D/StaticBody2D"]
+shape = SubResource("RectangleShape2D_q7hsi")
+
+[node name="Sprite2D3" type="Sprite2D" parent="."]
+position = Vector2(0, 1150)
+scale = Vector2(200, 30)
+texture = SubResource("GradientTexture2D_jluj8")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="Sprite2D3"]
+position = Vector2(-3.05176e-06, 3.05176e-06)
+scale = Vector2(3.2, 3.2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Sprite2D3/StaticBody2D"]
+shape = SubResource("RectangleShape2D_q7hsi")
+
+[node name="Sprite2D2" type="Sprite2D" parent="."]
+z_index = -1
+scale = Vector2(50, 4000)
+texture = SubResource("GradientTexture1D_4rjg2")
+
+[node name="ReplayManager" type="Node2D" parent="." node_paths=PackedStringArray("player")]
+script = ExtResource("2_4rjg2")
+dummy_y_offset = -120.0
+player = NodePath("../Player")
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="UI"]
+layout_mode = 1
+offset_left = -370.0
+offset_top = -219.0
+offset_right = -308.0
+offset_bottom = -196.0
+text = "SAMPLE"

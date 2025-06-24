@@ -1,473 +1,758 @@
 extends Node2D
-
-# Replay system for recording and playing back player actions
-class_name ReplayManager
+class_name PlayerReplayManager
 
 # Recording settings
-@export var record_fps: int = 60  # How many frames per second to record
-@export var max_recording_time: float = 300.0  # 5 minutes max
+@export var record_fps: int = 60
+@export var max_recording_time: float = 300.0
 @export var auto_start_recording: bool = true
-@export var save_replay_on_level_complete: bool = true
 
-# File paths
+# Ghost settings
+@export var ghost_y_offset: float = -50.0
+@export var ghost_opacity: float = 0.7
+@export var ghost_color: Color = Color(0.2, 0.8, 1.0, 0.7)
+
+# Smoothing settings
+@export var position_smoothing: bool = true
+@export var position_smoothing_speed: float = 15.0
+@export var rotation_smoothing: bool = true
+@export var rotation_smoothing_speed: float = 10.0
+@export var animation_transition_smoothing: bool = true
+
+# File settings
 @export var replay_folder: String = "user://replays/"
-@export var replay_file_prefix: String = "replay_"
 
-# Replay data structure
+# References - These should be assigned in the editor
+@export var game_manager: GameManager = null
+@export var player: CharacterBody2D = null
+@export var ghost_player: Node2D = null
+
+
+# Enhanced replay frame structure with rotation and scale
 class ReplayFrame:
-	var timestamp: float
-	var position: Vector2
-	var velocity: Vector2
+	var time: float
+	var pos: Vector2
+	var vel: Vector2
+	var rotation: float
+	var scale: Vector2
 	var inputs: Dictionary
-	var animation_state: String
 	var facing_right: bool
-	var custom_data: Dictionary = {}
+	var animation_name: String = ""
+	var animation_position: float = 0.0
+	var animation_speed: float = 1.0
+	var animation_playing: bool = false
 	
-	func _init(time: float, pos: Vector2, vel: Vector2, input_data: Dictionary, anim: String, facing: bool, extra: Dictionary = {}):
-		timestamp = time
-		position = pos
-		velocity = vel
-		inputs = input_data.duplicate()
-		animation_state = anim
-		facing_right = facing
-		custom_data = extra.duplicate()
+	func _init(t: float, p: Vector2, v: Vector2, rot: float, sc: Vector2, inp: Dictionary, face: bool, anim: String = "", anim_pos: float = 0.0, anim_speed: float = 1.0, anim_playing: bool = false):
+		time = t
+		pos = p
+		vel = v
+		rotation = rot
+		scale = sc
+		inputs = inp.duplicate()
+		facing_right = face
+		animation_name = anim
+		animation_position = anim_pos
+		animation_speed = anim_speed
+		animation_playing = anim_playing
 
-# Recording state
+# State variables
 var is_recording: bool = false
-var is_playing_back: bool = false
-var replay_frames: Array[ReplayFrame] = []
-var current_playback_index: int = 0
-var recording_start_time: float = 0.0
+var is_playing: bool = false
+var is_playback_paused: bool = false
+var current_frames: Array[ReplayFrame] = []
+var previous_frames: Array[ReplayFrame] = []
+var playback_index: int = 0
+var record_start_time: float = 0.0
 var playback_start_time: float = 0.0
+var playback_speed: float = 1.0
+var loop_playback: bool = true
 
-# Target references
-var player: CharacterBody2D = null
-var original_player_position: Vector2
-var replay_ghost: Node2D = null
+# Smoothing variables
+var ghost_target_position: Vector2 = Vector2.ZERO
+var ghost_target_rotation: float = 0.0
+var ghost_target_scale: Vector2 = Vector2.ONE
+var last_frame_time: float = 0.0
+var interpolation_alpha: float = 0.0
 
-# Input actions to track - these are common Godot actions
-var tracked_inputs: Array[String] = ["ui_left", "ui_right", "ui_up", "ui_down", "ui_accept"]
+# References
+var ghost_sprite: Sprite2D
+var ghost_animated_sprite: AnimatedSprite2D
+
+var player_animation_player: AnimationPlayer = null
+var ghost_animation_player: AnimationPlayer = null
+
+# Input tracking
+var tracked_inputs: PackedStringArray = []
+
+# Animation state tracking
+var current_ghost_animation: String = ""
+var animation_blend_time: float = 0.1
 
 # Signals
 signal recording_started
-signal recording_stopped(replay_data: Array)
+signal recording_stopped
 signal playback_started
-signal playback_finished
-signal replay_saved(file_path: String)
+signal playback_stopped
+signal playback_paused
+signal playback_resumed
+signal playback_position_changed(progress: float)
 
 func _ready():
-	# Create replay folder if it doesn't exist
-	if not DirAccess.dir_exists_absolute(replay_folder):
-		DirAccess.open("user://").make_dir_recursive(replay_folder)
+	_ensure_folder_exists()
+	_setup_ghost_color()
 	
-	# Find player automatically (with delay to ensure scene is loaded)
-	call_deferred("find_player")
-
-func _process(delta):
-	if is_recording and player:
-		record_frame()
-	elif is_playing_back:
-		playback_frame(delta)
-
-func find_player():
-	# Wait a frame to ensure scene is fully loaded
-	await get_tree().process_frame
-	
-	# Try to find player in scene using multiple methods
-	# Method 1: Try "player" group
-	var players_in_group = get_tree().get_nodes_in_group("player")
-	if players_in_group.size() > 0:
-		player = players_in_group[0]
-		print("ReplayManager: Found player in 'player' group: ", player.name)
-	
-	# Method 2: Try "players" group (plural)
-	if not player:
-		players_in_group = get_tree().get_nodes_in_group("players")
-		if players_in_group.size() > 0:
-			player = players_in_group[0]
-			print("ReplayManager: Found player in 'players' group: ", player.name)
-	
-	# Method 3: Search by common names in current scene
-	if not player:
-		var potential_names = ["Player", "player", "PlayerCharacter", "Character", "MainCharacter"]
-		var current_scene = get_tree().current_scene
-		
-		for name in potential_names:
-			var found = current_scene.find_child(name, true, false)
-			if found and found is CharacterBody2D:
-				player = found
-				print("ReplayManager: Found player by name: ", player.name)
-				break
-	
-	# Method 4: Search for any CharacterBody2D in scene
-	if not player:
-		var all_nodes = get_all_children(get_tree().current_scene)
-		for node in all_nodes:
-			if node is CharacterBody2D:
-				player = node
-				print("ReplayManager: Using first CharacterBody2D found: ", player.name)
-				break
-	
+	# Auto-setup if player is assigned
 	if player:
-		original_player_position = player.global_position
-		print("ReplayManager: Player setup complete at position: ", original_player_position)
-		
-		# Auto-detect available input actions from InputMap
-		detect_input_actions()
-		
-		if auto_start_recording:
-			start_recording()
-	else:
-		push_warning("ReplayManager: Player not found! Please set player reference manually using set_player_reference()")
+		_setup_system()
+		player_animation_player = player.player_animation
+		if ghost_player:
+			game_manager.ghost = ghost_player
+			ghost_animation_player = ghost_player.ghost_animation
 
-func get_all_children(node: Node) -> Array:
-	var children = []
-	children.append(node)
-	for child in node.get_children():
-		children.append_array(get_all_children(child))
-	return children
+func _process(delta: float):
+	if is_playing and ghost_player and not is_playback_paused:
+		_smooth_ghost_movement(delta)
 
-func detect_input_actions():
-	# Get all input actions and filter for likely movement actions
-	var all_actions = InputMap.get_actions()
-	tracked_inputs.clear()
+func _physics_process(_delta: float):
+	if is_recording and player:
+		_record_frame()
 	
-	for action in all_actions:
+	if is_playing and ghost_player and not is_playback_paused:
+		_update_playback()
+
+# Setup functions
+func _setup_system():
+	if not player:
+		push_error("PlayerReplayManager: Player not assigned!")
+		return
+	
+	if not ghost_player:
+		push_error("PlayerReplayManager: Ghost player not assigned!")
+		return
+	
+	_detect_inputs()
+	_setup_ghost()
+	load_from_file()
+	
+	if auto_start_recording:
+		start_recording()
+
+func _ensure_folder_exists():
+	if not DirAccess.dir_exists_absolute(replay_folder):
+		DirAccess.open("user://").make_dir_recursive("replays")
+
+func _setup_ghost_color():
+	ghost_color.a = ghost_opacity
+
+func _detect_inputs():
+	tracked_inputs.clear()
+	for action in InputMap.get_actions():
 		var action_str = str(action)
-		# Include common movement and action inputs
 		if (action_str.contains("left") or action_str.contains("right") or 
 			action_str.contains("up") or action_str.contains("down") or
-			action_str.contains("jump") or action_str.contains("dash") or
-			action_str.contains("move") or action_str.begins_with("ui_")):
+			action_str.contains("jump") or action_str.contains("move") or
+			action_str.contains("ui_")):
 			tracked_inputs.append(action_str)
+
+func _setup_ghost():
+	if not ghost_player:
+		push_error("PlayerReplayManager: Ghost player not assigned!")
+		return
 	
-	print("ReplayManager: Tracking inputs: ", tracked_inputs)
+	# Find sprite components in ghost
+	ghost_sprite = _find_sprite(ghost_player)
+	ghost_animated_sprite = _find_animated_sprite(ghost_player)
+	
+	# Set up ghost appearance
+	if ghost_sprite:
+		ghost_sprite.modulate = ghost_color
+		ghost_sprite.z_index = (player.z_index if player else 0) - 1
+	
+	if ghost_animated_sprite:
+		ghost_animated_sprite.modulate = ghost_color
+		ghost_animated_sprite.z_index = (player.z_index if player else 0) - 1
+	
+	# Initially hide ghost
+	ghost_player.visible = false
+	
+	# Initialize smoothing targets
+	ghost_target_position = ghost_player.global_position
+	ghost_target_rotation = ghost_player.rotation
+	ghost_target_scale = ghost_player.scale
+	
+	# Disable ghost physics/input if it has any
+	if ghost_player.has_method("set_physics_process"):
+		ghost_player.set_physics_process(false)
+	if ghost_player.has_method("set_process_input"):
+		ghost_player.set_process_input(false)
+
+func _find_sprite(node: Node) -> Sprite2D:
+	if node is Sprite2D:
+		return node
+	for child in node.get_children():
+		var result = _find_sprite(child)
+		if result:
+			return result
+	return null
+
+func _find_animated_sprite(node: Node) -> AnimatedSprite2D:
+	if node is AnimatedSprite2D:
+		return node
+	for child in node.get_children():
+		var result = _find_animated_sprite(child)
+		if result:
+			return result
+	return null
+
+# Smoothing function for ghost movement
+func _smooth_ghost_movement(delta: float):
+	if not ghost_player:
+		return
+	
+	# Smooth position interpolation
+	if position_smoothing:
+		ghost_player.global_position = ghost_player.global_position.lerp(
+			ghost_target_position, 
+			position_smoothing_speed * delta
+		)
+	else:
+		ghost_player.global_position = ghost_target_position
+	
+	# Smooth rotation interpolation
+	if rotation_smoothing:
+		ghost_player.rotation = lerp_angle(
+			ghost_player.rotation, 
+			ghost_target_rotation, 
+			rotation_smoothing_speed * delta
+		)
+	else:
+		ghost_player.rotation = ghost_target_rotation
+	
+	# Smooth scale interpolation
+	ghost_player.scale = ghost_player.scale.lerp(
+		ghost_target_scale, 
+		position_smoothing_speed * delta
+	)
 
 # Recording functions
 func start_recording():
 	if not player:
-		push_error("ReplayManager: Cannot start recording without player reference!")
+		push_error("PlayerReplayManager: No player reference for recording!")
 		return
 	
-	is_recording = true
-	is_playing_back = false
-	replay_frames.clear()
-	recording_start_time = Time.get_ticks_msec() / 1000.0
-	original_player_position = player.global_position
-	
-	print("ReplayManager: Started recording at position: ", original_player_position)
-	recording_started.emit()
+	if not is_recording:
+		is_recording = true
+		current_frames.clear()
+		record_start_time = Time.get_ticks_msec() / 1000.0
+		print("Recording started")
+		recording_started.emit()
 
 func stop_recording():
-	if not is_recording:
-		return
-	
-	is_recording = false
-	print("ReplayManager: Stopped recording. Frames recorded: ", replay_frames.size())
-	recording_stopped.emit(replay_frames)
+	if is_recording:
+		is_recording = false
+		print("Recording stopped - ", current_frames.size(), " frames recorded")
+		recording_stopped.emit()
 
-func record_frame():
-	if not player or not is_instance_valid(player):
-		print("ERROR: Player reference invalid during recording!")
-		stop_recording()
-		return
-		
-	if replay_frames.size() >= max_recording_time * record_fps:
-		print("WARNING: Max recording time reached!")
+func _record_frame():
+	if current_frames.size() >= max_recording_time * record_fps:
 		stop_recording()
 		return
 	
-	var current_time = (Time.get_ticks_msec() / 1000.0) - recording_start_time
+	var current_time = (Time.get_ticks_msec() / 1000.0) - record_start_time
+	var inputs = _capture_inputs()
+	var facing = _get_facing_direction()
+	var velocity = player.velocity if "velocity" in player else Vector2.ZERO
+	var rotation = player.rotation
+	var scale = player.scale
+	var animation_data = _get_current_animation_state()
 	
-	# Capture input state
-	var input_data = {}
+	var frame = ReplayFrame.new(
+		current_time, 
+		player.global_position, 
+		velocity,
+		rotation,
+		scale,
+		inputs, 
+		facing, 
+		animation_data.name,
+		animation_data.position,
+		animation_data.speed,
+		animation_data.playing
+	)
+	current_frames.append(frame)
+
+func _capture_inputs() -> Dictionary:
+	var inputs = {}
 	for action in tracked_inputs:
 		if InputMap.has_action(action):
-			input_data[str(action) + "_pressed"] = Input.is_action_pressed(action)
-			input_data[str(action) + "_just_pressed"] = Input.is_action_just_pressed(action)
-			input_data[str(action) + "_just_released"] = Input.is_action_just_released(action)
-	
-	# Get animation state
-	var anim_state = "idle"
-	var anim_player = find_animation_player(player)
-	if anim_player and anim_player.current_animation != "":
-		anim_state = anim_player.current_animation
-	elif player.has_method("get_current_animation"):
-		anim_state = player.get_current_animation()
-	
-	# Get facing direction
-	var facing_right = true
-	var sprite = find_sprite(player)
-	if sprite and "flip_h" in sprite:
-		facing_right = not sprite.flip_h
-	elif player.has_method("is_facing_right"):
-		facing_right = player.is_facing_right()
-	
-	# Get velocity safely
-	var current_velocity = Vector2.ZERO
-	if "velocity" in player:
-		current_velocity = player.velocity
-	elif player.has_method("get_velocity"):
-		current_velocity = player.get_velocity()
-	
-	# Create frame
-	var frame = ReplayFrame.new(
-		current_time,
-		player.global_position,
-		current_velocity,
-		input_data,
-		anim_state,
-		facing_right,
-		{}
-	)
-	
-	replay_frames.append(frame)
+			inputs[action] = Input.is_action_pressed(action)
+	return inputs
 
-func find_animation_player(node: Node) -> AnimationPlayer:
-	if node is AnimationPlayer:
-		return node
+func _get_facing_direction() -> bool:
+	# Try AnimatedSprite2D first, then Sprite2D
+	if ghost_animated_sprite:
+		var player_animated_sprite = _find_animated_sprite(player)
+		if player_animated_sprite:
+			return not player_animated_sprite.flip_h
 	
-	for child in node.get_children():
-		if child is AnimationPlayer:
-			return child
-		var result = find_animation_player(child)
-		if result:
-			return result
-	
-	return null
+	var sprite = _find_sprite(player)
+	if sprite:
+		return not sprite.flip_h
+	return true
 
-func find_sprite(node: Node) -> Node:
-	if node is Sprite2D:
-		return node
-		
-	for child in node.get_children():
-		if child is Sprite2D:
-			return child
-		var result = find_sprite(child)
-		if result:
-			return result
+func _get_current_animation_state() -> Dictionary:
+	var animation_data = {
+		"name": "",
+		"position": 0.0,
+		"speed": 1.0,
+		"playing": false
+	}
 	
-	return null
+	# Check AnimationPlayer first
+	if player_animation_player and player_animation_player.is_playing():
+		animation_data.name = player_animation_player.current_animation
+		animation_data.position = player_animation_player.current_animation_position
+		animation_data.speed = player_animation_player.speed_scale
+		animation_data.playing = true
+	else:
+		# Check AnimatedSprite2D
+		var player_animated_sprite = _find_animated_sprite(player)
+		if player_animated_sprite:
+			animation_data.name = player_animated_sprite.animation
+			animation_data.position = player_animated_sprite.frame_progress if player_animated_sprite.sprite_frames else 0.0
+			animation_data.speed = player_animated_sprite.speed_scale
+			animation_data.playing = player_animated_sprite.is_playing()
+	
+	return animation_data
 
 # Playback functions
-func start_playback(replay_data: Array[ReplayFrame] = []):
-	if replay_data.size() > 0:
-		replay_frames = replay_data
-	
-	if replay_frames.size() == 0:
-		push_warning("ReplayManager: No replay data to play back!")
+func start_playback():
+	if previous_frames.is_empty():
+		print("No previous frames to play back")
+		return
+		
+	if not ghost_player:
+		print("Ghost player not assigned!")
 		return
 	
-	is_playing_back = true
-	is_recording = false
-	current_playback_index = 0
-	playback_start_time = Time.get_ticks_msec() / 1000.0
-	
-	setup_replay_ghost()
-	
-	print("ReplayManager: Started playback with ", replay_frames.size(), " frames")
-	playback_started.emit()
+	if not is_playing:
+		is_playing = true
+		is_playback_paused = false
+		playback_index = 0
+		playback_start_time = Time.get_ticks_msec() / 1000.0
+		last_frame_time = 0.0
+		ghost_player.visible = true
+		
+		# Initialize ghost position to first frame
+		if not previous_frames.is_empty():
+			var first_frame = previous_frames[0]
+			ghost_target_position = Vector2(first_frame.pos.x, first_frame.pos.y + ghost_y_offset)
+			ghost_target_rotation = first_frame.rotation
+			ghost_target_scale = first_frame.scale
+			ghost_player.global_position = ghost_target_position
+			ghost_player.rotation = ghost_target_rotation
+			ghost_player.scale = ghost_target_scale
+		
+		print("Playback started with ", previous_frames.size(), " frames")
+		playback_started.emit()
 
 func stop_playback():
-	if not is_playing_back:
-		return
-	
-	is_playing_back = false
-	cleanup_replay_ghost()
-	
-	print("ReplayManager: Stopped playback")
-	playback_finished.emit()
+	if is_playing:
+		is_playing = false
+		is_playback_paused = false
+		if ghost_player:
+			ghost_player.visible = false
+		# Stop ghost animations
+		if ghost_animation_player:
+			ghost_animation_player.stop()
+		if ghost_animated_sprite:
+			ghost_animated_sprite.stop()
+		print("Playback stopped")
+		playback_stopped.emit()
 
-func playback_frame(delta):
-	if current_playback_index >= replay_frames.size():
-		stop_playback()
-		return
-	
-	var current_time = (Time.get_ticks_msec() / 1000.0) - playback_start_time
-	
-	# Find the appropriate frame for current time
-	while (current_playback_index < replay_frames.size() and 
-		   replay_frames[current_playback_index].timestamp <= current_time):
-		
-		var target_frame = replay_frames[current_playback_index]
-		apply_frame_to_ghost(target_frame)
-		current_playback_index += 1
-
-func setup_replay_ghost():
-	if not player:
-		return
-	
-	# Create a simple ghost representation
-	replay_ghost = Node2D.new()
-	replay_ghost.name = "ReplayGhost"
-	get_tree().current_scene.add_child(replay_ghost)
-	
-	# Copy the player's sprite
-	var player_sprite = find_sprite(player)
-	if player_sprite:
-		var ghost_sprite = player_sprite.duplicate()
-		replay_ghost.add_child(ghost_sprite)
-		ghost_sprite.modulate = Color(0, 1, 1, 0.7)  # Cyan semi-transparent
-		ghost_sprite.z_index = player.z_index - 1
+func toggle_playback():
+	if is_playing:
+		if is_playback_paused:
+			resume_playback()
+		else:
+			pause_playback()
 	else:
-		# Create a simple colored rectangle as fallback
-		var ghost_sprite = ColorRect.new()
-		ghost_sprite.size = Vector2(32, 32)
-		ghost_sprite.color = Color(0, 1, 1, 0.7)
-		ghost_sprite.position = Vector2(-16, -16)  # Center it
-		replay_ghost.add_child(ghost_sprite)
-	
-	# Set initial position
-	if replay_frames.size() > 0:
-		replay_ghost.global_position = replay_frames[0].position
+		start_playback()
 
-func apply_frame_to_ghost(frame: ReplayFrame):
-	if not replay_ghost or not is_instance_valid(replay_ghost):
+func pause_playback():
+	if is_playing and not is_playback_paused:
+		is_playback_paused = true
+		# Pause ghost animations
+		if ghost_animation_player and ghost_animation_player.is_playing():
+			ghost_animation_player.pause()
+		playback_paused.emit()
+
+func resume_playback():
+	if is_playing and is_playback_paused:
+		is_playback_paused = false
+		# Adjust start time to account for pause duration
+		playback_start_time = Time.get_ticks_msec() / 1000.0 - (previous_frames[playback_index].time / playback_speed)
+		playback_resumed.emit()
+
+func _update_playback():
+	if previous_frames.is_empty():
 		return
 	
-	# Update position
-	replay_ghost.global_position = frame.position
+	var current_time = (Time.get_ticks_msec() / 1000.0 - playback_start_time) * playback_speed
 	
-	# Update facing direction
-	var ghost_sprite = find_sprite(replay_ghost)
-	if ghost_sprite and "flip_h" in ghost_sprite:
-		ghost_sprite.flip_h = not frame.facing_right
+	# Find the current and next frames for interpolation
+	var current_frame: ReplayFrame = null
+	var next_frame: ReplayFrame = null
 	
-	# Update animation if available
-	var ghost_anim = find_animation_player(replay_ghost)
-	if ghost_anim and ghost_anim.has_animation(frame.animation_state):
-		if ghost_anim.current_animation != frame.animation_state:
-			ghost_anim.play(frame.animation_state)
+	# Find appropriate frames
+	while playback_index < previous_frames.size() and previous_frames[playback_index].time <= current_time:
+		playback_index += 1
+	
+	if playback_index >= previous_frames.size():
+		if loop_playback:
+			playback_index = 0
+			playback_start_time = Time.get_ticks_msec() / 1000.0
+			current_time = 0.0
+		else:
+			stop_playback()
+		return
+	
+	# Get frames for interpolation
+	if playback_index == 0:
+		current_frame = previous_frames[0]
+		next_frame = previous_frames[min(1, previous_frames.size() - 1)]
+		interpolation_alpha = 0.0
+	else:
+		current_frame = previous_frames[playback_index - 1]
+		next_frame = previous_frames[playback_index]
+		
+		# Calculate interpolation alpha
+		var frame_duration = next_frame.time - current_frame.time
+		if frame_duration > 0:
+			interpolation_alpha = (current_time - current_frame.time) / frame_duration
+			interpolation_alpha = clampf(interpolation_alpha, 0.0, 1.0)
+		else:
+			interpolation_alpha = 0.0
+	
+	_apply_interpolated_frame_to_ghost(current_frame, next_frame, interpolation_alpha)
+	playback_position_changed.emit(get_playback_progress())
 
-func cleanup_replay_ghost():
-	if replay_ghost and is_instance_valid(replay_ghost):
-		replay_ghost.queue_free()
-		replay_ghost = null
+func _apply_interpolated_frame_to_ghost(current_frame: ReplayFrame, next_frame: ReplayFrame, alpha: float):
+	if not ghost_player:
+		return
+	
+	# Interpolate position
+	var interpolated_pos = current_frame.pos.lerp(next_frame.pos, alpha)
+	ghost_target_position = Vector2(interpolated_pos.x, interpolated_pos.y + ghost_y_offset)
+	
+	# Interpolate rotation
+	ghost_target_rotation = lerp_angle(current_frame.rotation, next_frame.rotation, alpha)
+	
+	# Interpolate scale
+	ghost_target_scale = current_frame.scale.lerp(next_frame.scale, alpha)
+	
+	# Set facing direction (use next frame's direction when alpha > 0.5)
+	var use_next_facing = alpha > 0.5
+	var facing = next_frame.facing_right if use_next_facing else current_frame.facing_right
+	
+	if ghost_sprite:
+		ghost_sprite.flip_h = not facing
+	
+	if ghost_animated_sprite:
+		ghost_animated_sprite.flip_h = not facing
+	
+	# Apply animation state (prefer next frame for smoother transitions)
+	var animation_frame = next_frame if alpha > 0.3 else current_frame
+	_apply_animation_state_to_ghost(animation_frame, alpha)
+
+func _apply_animation_state_to_ghost(frame: ReplayFrame, blend_alpha: float = 1.0):
+	# Apply AnimationPlayer state if available
+	if ghost_animation_player and frame.animation_name != "":
+		if ghost_animation_player.has_animation(frame.animation_name):
+			# Smooth animation transitions
+			if animation_transition_smoothing and current_ghost_animation != frame.animation_name:
+				current_ghost_animation = frame.animation_name
+				# Use crossfade if available
+				if ghost_animation_player.has_method("play_with_capture"):
+					ghost_animation_player.play_with_capture(frame.animation_name, animation_blend_time)
+				else:
+					ghost_animation_player.play(frame.animation_name)
+			elif not ghost_animation_player.is_playing() or ghost_animation_player.current_animation != frame.animation_name:
+				ghost_animation_player.play(frame.animation_name)
+				current_ghost_animation = frame.animation_name
+			
+			# Set animation position and speed with smoothing
+			ghost_animation_player.speed_scale = frame.animation_speed
+			if frame.animation_playing:
+				# Smooth seek to position
+				var current_pos = ghost_animation_player.current_animation_position
+				var target_pos = frame.animation_position
+				var smooth_pos = lerp(current_pos, target_pos, blend_alpha * 0.5 + 0.5)
+				ghost_animation_player.seek(smooth_pos, true)
+			else:
+				ghost_animation_player.pause()
+				ghost_animation_player.seek(frame.animation_position, true)
+	
+	# Apply AnimatedSprite2D state if available
+	if ghost_animated_sprite and frame.animation_name != "":
+		if ghost_animated_sprite.sprite_frames and ghost_animated_sprite.sprite_frames.has_animation(frame.animation_name):
+			# Smooth animation transitions
+			if ghost_animated_sprite.animation != frame.animation_name:
+				ghost_animated_sprite.animation = frame.animation_name
+				current_ghost_animation = frame.animation_name
+			
+			# Set speed and playing state
+			ghost_animated_sprite.speed_scale = frame.animation_speed
+			
+			if frame.animation_playing:
+				if not ghost_animated_sprite.is_playing():
+					ghost_animated_sprite.play()
+				# Set frame based on position with smoothing
+				var total_frames = ghost_animated_sprite.sprite_frames.get_frame_count(frame.animation_name)
+				if total_frames > 0:
+					var target_frame_index = int(frame.animation_position * total_frames) % total_frames
+					# Smooth frame transitions for better visual flow
+					if abs(ghost_animated_sprite.frame - target_frame_index) <= 1 or total_frames <= 2:
+						ghost_animated_sprite.frame = target_frame_index
+					else:
+						# Gradual frame adjustment for smoother playback
+						var frame_diff = target_frame_index - ghost_animated_sprite.frame
+						if abs(frame_diff) > total_frames / 2:
+							# Handle wrap-around
+							ghost_animated_sprite.frame = target_frame_index
+						else:
+							ghost_animated_sprite.frame = ghost_animated_sprite.frame + sign(frame_diff)
+			else:
+				ghost_animated_sprite.stop()
+				# Set frame for paused state
+				var total_frames = ghost_animated_sprite.sprite_frames.get_frame_count(frame.animation_name)
+				if total_frames > 0:
+					var frame_index = int(frame.animation_position * total_frames) % total_frames
+					ghost_animated_sprite.frame = frame_index
+
+# Playback navigation
+func step_forward():
+	if not is_playing or previous_frames.is_empty():
+		return
+	
+	pause_playback()
+	playback_index = min(playback_index + 1, previous_frames.size() - 1)
+	_apply_interpolated_frame_to_ghost(previous_frames[playback_index], previous_frames[playback_index], 1.0)
+	playback_position_changed.emit(get_playback_progress())
+
+func step_backward():
+	if not is_playing or previous_frames.is_empty():
+		return
+	
+	pause_playback()
+	playback_index = max(playback_index - 1, 0)
+	_apply_interpolated_frame_to_ghost(previous_frames[playback_index], previous_frames[playback_index], 1.0)
+	playback_position_changed.emit(get_playback_progress())
+
+func set_playback_position(progress: float):
+	if not is_playing or previous_frames.is_empty():
+		return
+	
+	progress = clampf(progress, 0.0, 1.0)
+	playback_index = int(progress * (previous_frames.size() - 1))
+	_apply_interpolated_frame_to_ghost(previous_frames[playback_index], previous_frames[playback_index], 1.0)
+	
+	# Adjust start time so playback continues from this position
+	if not is_playback_paused:
+		playback_start_time = Time.get_ticks_msec() / 1000.0 - (previous_frames[playback_index].time / playback_speed)
+	
+	playback_position_changed.emit(progress)
+
+# Speed control
+func set_playback_speed(speed: float):
+	playback_speed = clampf(speed, 0.25, 6.0)
+	if is_playing and playback_index < previous_frames.size():
+		playback_start_time = Time.get_ticks_msec() / 1000.0 - (previous_frames[playback_index].time / playback_speed)
+
+# Replay management
+func save_current_recording():
+	if current_frames.is_empty():
+		print("No current recording to save")
+		return false
+	
+	# Save current recording as previous frames
+	previous_frames = current_frames.duplicate()
+	current_frames.clear()
+	_save_to_file()
+	
+	print("Recording saved with ", previous_frames.size(), " frames")
+	return true
+
+func clear_current_recording():
+	current_frames.clear()
+	if is_recording:
+		stop_recording()
 
 # File operations
-func save_replay(filename: String = ""):
-	if replay_frames.size() == 0:
-		print("ERROR: No replay data to save!")
-		return ""
-	
-	# Ensure replay folder exists
-	var dir = DirAccess.open("user://")
-	if not dir.dir_exists(replay_folder.trim_prefix("user://")):
-		var result = dir.make_dir_recursive(replay_folder.trim_prefix("user://"))
-		print("Created replay folder, result: ", result)
-	
-	if filename.is_empty():
-		var timestamp = Time.get_datetime_string_from_system().replace(":", "-").replace(" ", "_")
-		filename = replay_file_prefix + timestamp + ".json"
-	
-	var file_path = replay_folder + filename
+func _save_to_file():
+	var file_path = replay_folder + "replay_previous.json"
 	var file = FileAccess.open(file_path, FileAccess.WRITE)
-	
 	if not file:
-		print("ERROR: Failed to open file for writing: ", file_path)
-		return ""
+		push_error("PlayerReplayManager: Failed to create save file: " + file_path)
+		return
 	
-	var replay_data = {
-		"version": "1.0",
-		"level_name": get_tree().current_scene.scene_file_path,
-		"player_start_position": {"x": original_player_position.x, "y": original_player_position.y},
-		"total_frames": replay_frames.size(),
+	var data = {
+		"version": "3.0",  # Updated version for smoothing data
 		"frames": []
 	}
 	
-	for frame in replay_frames:
-		var frame_data = {
-			"timestamp": frame.timestamp,
-			"position": {"x": frame.position.x, "y": frame.position.y},
-			"velocity": {"x": frame.velocity.x, "y": frame.velocity.y},
+	for frame in previous_frames:
+		data.frames.append({
+			"time": frame.time,
+			"pos": {"x": frame.pos.x, "y": frame.pos.y},
+			"vel": {"x": frame.vel.x, "y": frame.vel.y},
+			"rotation": frame.rotation,
+			"scale": {"x": frame.scale.x, "y": frame.scale.y},
 			"inputs": frame.inputs,
-			"animation_state": frame.animation_state,
-			"facing_right": frame.facing_right,
-			"custom_data": frame.custom_data
-		}
-		replay_data.frames.append(frame_data)
+			"facing": frame.facing_right,
+			"animation": frame.animation_name,
+			"animation_position": frame.animation_position,
+			"animation_speed": frame.animation_speed,
+			"animation_playing": frame.animation_playing
+		})
 	
-	var json_string = JSON.stringify(replay_data)
-	file.store_string(json_string)
+	file.store_string(JSON.stringify(data))
 	file.close()
-	
-	print("SUCCESS: Replay saved to ", file_path)
-	replay_saved.emit(file_path)
-	return file_path
 
-func load_replay(file_path: String) -> bool:
+func load_from_file():
+	var file_path = replay_folder + "replay_previous.json"
 	if not FileAccess.file_exists(file_path):
-		push_error("ReplayManager: Replay file does not exist: " + file_path)
-		return false
+		print("No previous replay file found")
+		return
 	
 	var file = FileAccess.open(file_path, FileAccess.READ)
 	if not file:
-		push_error("ReplayManager: Failed to open replay file: " + file_path)
-		return false
+		push_error("PlayerReplayManager: Failed to open replay file: " + file_path)
+		return
 	
 	var json_string = file.get_as_text()
 	file.close()
 	
 	var json = JSON.new()
 	var parse_result = json.parse(json_string)
-	
 	if parse_result != OK:
-		push_error("ReplayManager: Failed to parse replay file: " + file_path)
-		return false
+		push_error("PlayerReplayManager: Failed to parse JSON: " + json.get_error_message())
+		return
 	
-	var replay_data = json.data
-	replay_frames.clear()
+	var data = json.data
+	if not data.has("frames"):
+		push_error("PlayerReplayManager: Invalid replay file format")
+		return
 	
-	for frame_data in replay_data.frames:
-		var position = Vector2(frame_data.position.x, frame_data.position.y)
-		var velocity = Vector2(frame_data.velocity.x, frame_data.velocity.y)
+	previous_frames.clear()
+	for frame_data in data.frames:
+		var pos = Vector2(frame_data.pos.x, frame_data.pos.y)
+		var vel = Vector2(frame_data.vel.x, frame_data.vel.y)
+		var rotation = frame_data.get("rotation", 0.0)
+		var scale = Vector2(
+			frame_data.get("scale", {"x": 1.0, "y": 1.0}).get("x", 1.0),
+			frame_data.get("scale", {"x": 1.0, "y": 1.0}).get("y", 1.0)
+		)
+		var animation = frame_data.get("animation", "")
+		var animation_position = frame_data.get("animation_position", 0.0)
+		var animation_speed = frame_data.get("animation_speed", 1.0)
+		var animation_playing = frame_data.get("animation_playing", false)
 		
 		var frame = ReplayFrame.new(
-			frame_data.timestamp,
-			position,
-			velocity,
-			frame_data.inputs,
-			frame_data.animation_state,
-			frame_data.facing_right,
-			frame_data.get("custom_data", {})
+			frame_data.time, 
+			pos, 
+			vel,
+			rotation,
+			scale,
+			frame_data.inputs, 
+			frame_data.facing, 
+			animation,
+			animation_position,
+			animation_speed,
+			animation_playing
 		)
-		replay_frames.append(frame)
+		previous_frames.append(frame)
 	
-	print("ReplayManager: Loaded replay with ", replay_frames.size(), " frames")
-	return true
+	print("Loaded ", previous_frames.size(), " frames from file")
 
-func get_available_replays() -> Array:
-	var replays = []
-	var dir = DirAccess.open(replay_folder)
-	
-	if dir:
-		dir.list_dir_begin()
-		var file_name = dir.get_next()
-		
-		while file_name != "":
-			if file_name.ends_with(".json"):
-				replays.append(file_name)
-			file_name = dir.get_next()
-	
-	return replays
-
-# Public API functions
-func set_player_reference(player_node: CharacterBody2D):
+# Public API - Enhanced with smoothing controls
+func set_player_and_ghost(player_node: CharacterBody2D, ghost_node: CharacterBody2D):
 	player = player_node
-	if player:
-		original_player_position = player.global_position
-		detect_input_actions()
-		print("ReplayManager: Player reference set manually to ", player.name)
-		
-		if auto_start_recording and not is_recording:
-			start_recording()
+	ghost_player = ghost_node
+	_setup_system()
 
+func set_ghost_offset(offset: float):
+	ghost_y_offset = offset
+
+func set_ghost_opacity(opacity: float):
+	ghost_opacity = clampf(opacity, 0.0, 1.0)
+	ghost_color.a = ghost_opacity
+	_setup_ghost_color()
+	
+	if ghost_sprite:
+		ghost_sprite.modulate = ghost_color
+	if ghost_animated_sprite:
+		ghost_animated_sprite.modulate = ghost_color
+
+func set_loop_enabled(enabled: bool):
+	loop_playback = enabled
+
+func set_position_smoothing(enabled: bool, speed: float = 15.0):
+	position_smoothing = enabled
+	position_smoothing_speed = clampf(speed, 1.0, 50.0)
+
+func set_rotation_smoothing(enabled: bool, speed: float = 10.0):
+	rotation_smoothing = enabled
+	rotation_smoothing_speed = clampf(speed, 1.0, 50.0)
+
+func set_animation_smoothing(enabled: bool, blend_time: float = 0.1):
+	animation_transition_smoothing = enabled
+	animation_blend_time = clampf(blend_time, 0.0, 1.0)
+
+# Status functions
 func get_recording_duration() -> float:
-	if replay_frames.size() == 0:
-		return 0.0
-	return replay_frames[-1].timestamp
+	return current_frames[-1].time if not current_frames.is_empty() else 0.0
+
+func get_playback_duration() -> float:
+	return previous_frames[-1].time if not previous_frames.is_empty() else 0.0
 
 func get_playback_progress() -> float:
-	if not is_playing_back or replay_frames.size() == 0:
+	if not is_playing or previous_frames.is_empty():
 		return 0.0
-	return float(current_playback_index) / float(replay_frames.size())
+	return float(playback_index) / float(previous_frames.size() - 1)
+
+func get_stats() -> Dictionary:
+	return {
+		"recording": is_recording,
+		"playing": is_playing,
+		"paused": is_playback_paused,
+		"current_frames": current_frames.size(),
+		"previous_frames": previous_frames.size(),
+		"speed": playback_speed,
+		"progress": get_playback_progress(),
+		"recording_duration": get_recording_duration(),
+		"playback_duration": get_playback_duration(),
+		"has_player": player != null,
+		"has_ghost": ghost_player != null,
+		"position_smoothing": position_smoothing,
+		"rotation_smoothing": rotation_smoothing,
+		"animation_smoothing": animation_transition_smoothing,
+		"interpolation_alpha": interpolation_alpha
+	}
+
+# Debug functions
+func print_debug_info():
+	print("=== PlayerReplayManager Debug Info ===")
+	print("Player assigned: ", player != null)
+	print("Ghost assigned: ", ghost_player != null)
+	print("Is recording: ", is_recording)
+	print("Is playing: ", is_playing)
+	print("Current frames: ", current_frames.size())
+	print("Previous frames: ", previous_frames.size())
+	print("Tracked inputs: ", tracked_inputs)
+	print("Player AnimationPlayer: ", player_animation_player != null)
+	print("Ghost AnimationPlayer: ", ghost_animation_player != null)
+	print("Position smoothing: ", position_smoothing, " (", position_smoothing_speed, ")")
+	print("Rotation smoothing: ", rotation_smoothing, " (", rotation_smoothing_speed, ")")
+	print("Animation smoothing: ", animation_transition_smoothing, " (", animation_blend_time, ")")
+	print("Interpolation alpha: ", interpolation_alpha)
+	print("=====================================")

@@ -20,16 +20,10 @@ var is_transitioning: bool = false
 @export var step_sound: AudioStreamPlayer2D
 
 # Parent and sprite references
-var player: CharacterBody2D
-var sprite: Sprite2D
+@export var player: CharacterBody2D
+@export var sprite: Sprite2D
 
 func _ready():
-	# Get parent player reference
-	player = get_parent() as CharacterBody2D
-	
-	# Get sprite reference (assuming it's a sibling)
-	sprite = get_parent().get_node("Player") as Sprite2D
-	
 	# Connect animation signals
 	if enable_animation_events:
 		animation_finished.connect(_on_animation_finished)

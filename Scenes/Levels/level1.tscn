@@ -1,0 +1,46 @@
+[gd_scene load_steps=5 format=3 uid="uid://baekkhp7w4ad1"]
+
+[ext_resource type="Script" uid="uid://dtdahnhamxbwy" path="res://Scripts/Levels/level.gd" id="1_7u4ml"]
+
+[sub_resource type="Gradient" id="Gradient_4rjg2"]
+offsets = PackedFloat32Array(0, 0.311688, 0.720779, 1)
+colors = PackedColorArray(0.572669, 1.02278e-06, 1.92523e-07, 1, 0.3034, 0.219101, 4.81308e-08, 1, 6.61798e-07, 0.238659, 0.211337, 1, 0.203598, 0.183618, 0.435721, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_7u4ml"]
+gradient = SubResource("Gradient_4rjg2")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_16p8j"]
+
+[node name="Level1" type="Node2D" node_paths=PackedStringArray("colliders", "sprites", "respawn_point")]
+script = ExtResource("1_7u4ml")
+colliders = [NodePath("Sprite2D5/StaticBody2D/CollisionShape2D"), NodePath("Sprite2D6/StaticBody2D/CollisionShape2D")]
+sprites = [NodePath("Sprite2D5"), NodePath("Sprite2D6")]
+respawn_point = NodePath("RespawnPoint")
+
+[node name="Sprite2D5" type="Sprite2D" parent="."]
+z_index = 1
+position = Vector2(0, 514)
+scale = Vector2(20, 2)
+texture = SubResource("GradientTexture2D_7u4ml")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="Sprite2D5"]
+position = Vector2(-3.05176e-06, 3.05176e-06)
+scale = Vector2(3.2, 3.2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Sprite2D5/StaticBody2D"]
+shape = SubResource("RectangleShape2D_16p8j")
+
+[node name="Sprite2D6" type="Sprite2D" parent="."]
+z_index = 1
+position = Vector2(2299, 392)
+scale = Vector2(20, 2)
+texture = SubResource("GradientTexture2D_7u4ml")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="Sprite2D6"]
+position = Vector2(-3.05176e-06, 3.05176e-06)
+scale = Vector2(3.2, 3.2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Sprite2D6/StaticBody2D"]
+shape = SubResource("RectangleShape2D_16p8j")
+
+[node name="RespawnPoint" type="Node2D" parent="."]
