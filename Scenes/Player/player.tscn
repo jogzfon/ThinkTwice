@@ -1,12 +1,13 @@
-[gd_scene load_steps=18 format=3 uid="uid://c56ex3213akv1"]
+[gd_scene load_steps=21 format=3 uid="uid://c56ex3213akv1"]
 
 [ext_resource type="Script" uid="uid://dcquxoekraia6" path="res://Scripts/Player/player.gd" id="1_a3d8c"]
-[ext_resource type="Texture2D" uid="uid://l4mcf1quthls" path="res://Sprites/Player/MC.png" id="2_xpcdj"]
+[ext_resource type="Texture2D" uid="uid://c1fvrllfw0ka3" path="res://Sprites/Player/MC.png" id="2_xpcdj"]
 [ext_resource type="Script" uid="uid://deo3ccv7yvdju" path="res://Scripts/Player/player_animation.gd" id="3_xpcdj"]
 [ext_resource type="Script" uid="uid://cnnwtaprvcwnt" path="res://Scenes/Player/player_audio_manager.gd" id="4_mtuoh"]
 [ext_resource type="AudioStream" uid="uid://uvxgawsimex0" path="res://Audio/running.mp3" id="5_0u5uq"]
 [ext_resource type="AudioStream" uid="uid://c6m47ubko1ucc" path="res://Audio/jump.mp3" id="6_jlvik"]
 [ext_resource type="AudioStream" uid="uid://0vfaduonixgi" path="res://Audio/dash.mp3" id="7_gk6dx"]
+[ext_resource type="Texture2D" uid="uid://unhhjkxt8gdd" path="res://Sprites/Others/Snowball.png" id="8_jlvik"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_tugb3"]
 radius = 8.5
@@ -29,6 +30,19 @@ tracks/0/keys = {
 
 [sub_resource type="Animation" id="Animation_mtuoh"]
 resource_name = "fall"
+length = 0.4
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Player:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [11]
+}
 
 [sub_resource type="Animation" id="Animation_uvnfx"]
 resource_name = "idle"
@@ -48,6 +62,19 @@ tracks/0/keys = {
 
 [sub_resource type="Animation" id="Animation_xpcdj"]
 resource_name = "jump"
+length = 0.4
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Player:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2),
+"transitions": PackedFloat32Array(1, 1),
+"update": 1,
+"values": [9, 10]
+}
 
 [sub_resource type="Animation" id="Animation_htcer"]
 resource_name = "run"
@@ -66,9 +93,44 @@ tracks/0/keys = {
 "values": [5, 6, 7, 8]
 }
 
+[sub_resource type="Animation" id="Animation_0u5uq"]
+resource_name = "dash"
+length = 0.4
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Player:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 1,
+"values": [12, 13]
+}
+
+[sub_resource type="Animation" id="Animation_jlvik"]
+resource_name = "climb"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Player:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2, 0.4, 0.6),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 1,
+"values": [14, 15, 16, 17]
+}
+
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_xpcdj"]
 _data = {
 &"RESET": SubResource("Animation_a3d8c"),
+&"climb": SubResource("Animation_jlvik"),
+&"dash": SubResource("Animation_0u5uq"),
 &"fall": SubResource("Animation_mtuoh"),
 &"idle": SubResource("Animation_uvnfx"),
 &"jump": SubResource("Animation_xpcdj"),
@@ -84,11 +146,12 @@ radius = 150.583
 
 [sub_resource type="SphereMesh" id="SphereMesh_xpcdj"]
 
-[node name="Player" type="CharacterBody2D" node_paths=PackedStringArray("player_animation", "player_audio_manager")]
+[node name="Player" type="CharacterBody2D" node_paths=PackedStringArray("player_animation", "player_audio_manager", "jump_fx")]
 scale = Vector2(2, 2)
 script = ExtResource("1_a3d8c")
 player_animation = NodePath("AnimationPlayer")
 player_audio_manager = NodePath("PlayerAudioManager")
+jump_fx = NodePath("Fx/JumpParticle")
 
 [node name="PlayerCollision" type="CollisionShape2D" parent="."]
 position = Vector2(-0.5, 5)
@@ -97,7 +160,7 @@ shape = SubResource("CapsuleShape2D_tugb3")
 [node name="Player" type="Sprite2D" parent="."]
 texture_filter = 1
 texture = ExtResource("2_xpcdj")
-hframes = 10
+hframes = 18
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." node_paths=PackedStringArray("player", "sprite")]
 libraries = {
@@ -150,6 +213,26 @@ dash_sounds = Array[AudioStream]([ExtResource("7_gk6dx")])
 
 [node name="AudioListener2D" type="AudioListener2D" parent="PlayerAudioManager"]
 current = true
+
+[node name="Fx" type="Node2D" parent="."]
+
+[node name="JumpParticle" type="CPUParticles2D" parent="Fx"]
+position = Vector2(0, 16)
+emitting = false
+amount = 15
+texture = ExtResource("8_jlvik")
+lifetime = 0.2
+one_shot = true
+explosiveness = 0.5
+randomness = 1.0
+lifetime_randomness = 0.33
+emission_shape = 3
+emission_rect_extents = Vector2(8, 1)
+gravity = Vector2(0, 367.5)
+radial_accel_max = 0.75
+angle_max = 180.0
+scale_amount_min = 0.01
+scale_amount_max = 0.4
 
 [connection signal="area_entered" from="DangerArea" to="." method="_on_danger_area_area_entered"]
 [connection signal="area_entered" from="TeleportZone" to="." method="_on_teleport_zone_area_entered"]

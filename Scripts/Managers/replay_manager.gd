@@ -26,7 +26,8 @@ class_name PlayerReplayManager
 @export var player: CharacterBody2D = null
 @export var ghost_player: Node2D = null
 
-
+var ghost_jump_particle: CPUParticles2D = null
+var previous_jump_state: bool = false
 # Enhanced replay frame structure with rotation and scale
 class ReplayFrame:
 	var time: float
@@ -161,7 +162,11 @@ func _setup_ghost():
 	# Find sprite components in ghost
 	ghost_sprite = _find_sprite(ghost_player)
 	ghost_animated_sprite = _find_animated_sprite(ghost_player)
+	ghost_jump_particle = ghost_player.jump_particle
 	
+	if ghost_jump_particle:
+		ghost_jump_particle.color = Color(ghost_color,ghost_opacity)
+		
 	# Set up ghost appearance
 	if ghost_sprite:
 		ghost_sprite.modulate = ghost_color
@@ -340,6 +345,7 @@ func start_playback():
 		playback_index = 0
 		playback_start_time = Time.get_ticks_msec() / 1000.0
 		last_frame_time = 0.0
+		previous_jump_state = false 
 		ghost_player.visible = true
 		
 		# Initialize ghost position to first frame
@@ -359,6 +365,7 @@ func stop_playback():
 	if is_playing:
 		is_playing = false
 		is_playback_paused = false
+		previous_jump_state = false 
 		if ghost_player:
 			ghost_player.visible = false
 		# Stop ghost animations
@@ -460,9 +467,54 @@ func _apply_interpolated_frame_to_ghost(current_frame: ReplayFrame, next_frame: 
 	if ghost_animated_sprite:
 		ghost_animated_sprite.flip_h = not facing
 	
+	_check_and_handle_jump(current_frame, next_frame, alpha)
+	
 	# Apply animation state (prefer next frame for smoother transitions)
 	var animation_frame = next_frame if alpha > 0.3 else current_frame
 	_apply_animation_state_to_ghost(animation_frame, alpha)
+
+func _check_and_handle_jump(current_frame: ReplayFrame, next_frame: ReplayFrame, alpha: float):
+	# Check for jump input in the frame we're primarily using
+	var frame_to_check = next_frame if alpha > 0.5 else current_frame
+	
+	# Look for common jump input names
+	var jump_pressed = false
+	for input_name in frame_to_check.inputs.keys():
+		var input_str = str(input_name).to_lower()
+		if (input_str.contains("jump") or input_str.contains("ui_accept") or 
+			input_str == "ui_up") and frame_to_check.inputs[input_name]:
+			jump_pressed = true
+			break
+	
+	# Trigger jump on the rising edge (when jump goes from false to true)
+	if jump_pressed and not previous_jump_state:
+		_trigger_ghost_jump()
+	
+	previous_jump_state = jump_pressed
+
+# Add this new function to handle the actual jump execution
+func _trigger_ghost_jump():
+	if not ghost_player:
+		return
+	
+	# Call the ghost's jump method if it exists
+	if ghost_player.has_method("jump"):
+		ghost_player.jump()
+	
+	# Handle jump particle effect
+	if ghost_jump_particle:
+		# Make sure particle color matches ghost
+		ghost_jump_particle.color = ghost_color
+		
+		# Restart the particle system to show the jump effect
+		if ghost_jump_particle.has_method("restart"):
+			ghost_jump_particle.restart()
+		elif ghost_jump_particle.has_method("emit"):
+			ghost_jump_particle.emit = true
+		
+		# If the particle system has an emitting property, make sure it's enabled
+		if "emitting" in ghost_jump_particle:
+			ghost_jump_particle.emitting = true
 
 func _apply_animation_state_to_ghost(frame: ReplayFrame, blend_alpha: float = 1.0):
 	# Apply AnimationPlayer state if available

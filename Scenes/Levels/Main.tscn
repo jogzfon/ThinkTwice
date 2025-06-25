@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://bnj2btpr6i46x"]
+[gd_scene load_steps=20 format=3 uid="uid://bnj2btpr6i46x"]
 
 [ext_resource type="Script" uid="uid://bviw5ixl5saju" path="res://Scripts/Managers/Game_Manager.gd" id="1_jluj8"]
 [ext_resource type="PackedScene" uid="uid://c56ex3213akv1" path="res://Scenes/Player/player.tscn" id="1_q7hsi"]
@@ -6,12 +6,15 @@
 [ext_resource type="Shader" uid="uid://ckqljy33ie1go" path="res://Shaders/god_rays.gdshader" id="3_dmpbk"]
 [ext_resource type="PackedScene" uid="uid://dgx47n4blvq17" path="res://Scenes/Levels/tutorial_level.tscn" id="4_07780"]
 [ext_resource type="PackedScene" uid="uid://c5k5452n6xqel" path="res://Scenes/Player/ghost.tscn" id="4_d31q8"]
+[ext_resource type="FontFile" uid="uid://dqklhiwkc3isb" path="res://Fonts/Born2bSportyFS.otf" id="5_otbr7"]
 [ext_resource type="Shader" uid="uid://c8v1lrvvswngb" path="res://Shaders/time_rewind.gdshader" id="6_dmpbk"]
 [ext_resource type="AudioStream" uid="uid://clxqyv2nywc4d" path="res://Audio/tick_tock.mp3" id="8_oi5um"]
 [ext_resource type="Script" uid="uid://c076sscgv4a00" path="res://Scripts/Managers/audio_manager.gd" id="8_saai4"]
 [ext_resource type="PackedScene" uid="uid://baekkhp7w4ad1" path="res://Scenes/Levels/level1.tscn" id="10_nl3m6"]
 [ext_resource type="PackedScene" uid="uid://bpa7o7fq6ms7m" path="res://Scenes/Others/death_zone.tscn" id="11_4ih0k"]
 [ext_resource type="AudioStream" uid="uid://be7u8t7kneko2" path="res://Audio/Piano 8.mp3" id="11_mv52a"]
+[ext_resource type="Texture2D" uid="uid://cwviqj3hscf3a" path="res://Sprites/UI/Fail_Text.png" id="14_5wxa7"]
+[ext_resource type="Texture2D" uid="uid://cdpfic2lae1oo" path="res://Sprites/UI/Level_complete_text.png" id="15_dm2qe"]
 
 [sub_resource type="Gradient" id="Gradient_q7hsi"]
 colors = PackedColorArray(0.20868, 2.00043e-07, 2.40654e-08, 1, 0, 0.158089, 0.158089, 1)
@@ -47,13 +50,14 @@ shader_parameter/chromatic_aberration = 0.002
 shader_parameter/highlight_color = Color(0.761978, 0.9489, 1, 1)
 shader_parameter/shadow_color = Color(9.33737e-06, 0.12522, 0.407275, 1)
 
-[node name="Main" type="Node2D" node_paths=PackedStringArray("replay_manager", "audio_manager", "player", "ui_label", "timer", "reverse_time_effect", "reverse_timer", "reverse_timer_label", "level_holder", "respawn_point")]
+[node name="Main" type="Node2D" node_paths=PackedStringArray("replay_manager", "audio_manager", "player", "ui_label", "timer", "win_loose_canvas", "reverse_time_effect", "reverse_timer", "reverse_timer_label", "level_holder", "respawn_point")]
 script = ExtResource("1_jluj8")
 replay_manager = NodePath("ReplayManager")
 audio_manager = NodePath("AudioManager")
 player = NodePath("Player")
-ui_label = NodePath("UI/VBoxContainer/Label")
-timer = NodePath("UI/Timer")
+ui_label = NodePath("Instructions/Label")
+timer = NodePath("Instructions/Timer")
+win_loose_canvas = NodePath("WinOrLoose")
 reverse_time_effect = NodePath("ReverseTimeEffect")
 reverse_timer = NodePath("ReverseTimeEffect/ReverseTimeTimer")
 reverse_timer_label = NodePath("ReverseTimeEffect/Label")
@@ -64,14 +68,13 @@ time_key_controls = true
 
 [node name="Player" parent="." instance=ExtResource("1_q7hsi")]
 z_index = 5
-position = Vector2(98, 298)
 speed = 300.0
 jump_velocity = -600.0
 friction = 13.0
 air_acceleration = 12.0
 
 [node name="Camera2D" type="Camera2D" parent="Player"]
-zoom = Vector2(1.2, 1.2)
+zoom = Vector2(1.5, 1.5)
 
 [node name="Sprite2D2" type="Sprite2D" parent="."]
 z_index = -5
@@ -95,48 +98,6 @@ game_manager = NodePath("..")
 player = NodePath("../Player")
 ghost_player = NodePath("../Ghost")
 
-[node name="UI" type="Control" parent="."]
-visible = false
-layout_mode = 3
-anchors_preset = 0
-
-[node name="VBoxContainer" type="VBoxContainer" parent="UI"]
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 23.0
-grow_horizontal = 2
-alignment = 1
-
-[node name="Label" type="Label" parent="UI/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 0
-text = "SAMPLE"
-
-[node name="Timer" type="Timer" parent="UI"]
-
-[node name="ReverseTimeEffect" type="CanvasLayer" parent="."]
-visible = false
-
-[node name="ReverseTime" type="ColorRect" parent="ReverseTimeEffect"]
-material = SubResource("ShaderMaterial_r66ge")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Label" type="Label" parent="ReverseTimeEffect"]
-offset_left = 4.0
-offset_top = 5.0
-offset_right = 47.0
-offset_bottom = 28.0
-text = "Time Left: "
-
-[node name="ReverseTimeTimer" type="Timer" parent="ReverseTimeEffect"]
-wait_time = 3.0
-
 [node name="Ghost" parent="." instance=ExtResource("4_d31q8")]
 position = Vector2(-2000, 500)
 
@@ -156,5 +117,133 @@ stream = ExtResource("11_mv52a")
 [node name="DeathZone" parent="." instance=ExtResource("11_4ih0k")]
 position = Vector2(964, 650)
 
-[connection signal="timeout" from="ReverseTimeEffect/ReverseTimeTimer" to="." method="_on_reverse_time_timer_timeout"]
+[node name="ReverseTimeEffect" type="CanvasLayer" parent="."]
+visible = false
+
+[node name="ReverseTime" type="ColorRect" parent="ReverseTimeEffect"]
+material = SubResource("ShaderMaterial_r66ge")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="ReverseTimeEffect"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -10.0
+offset_top = -72.5
+offset_right = 101.0
+offset_bottom = -37.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("5_otbr7")
+theme_override_font_sizes/font_size = 30
+text = "Time Left: "
+
+[node name="ReverseTimeTimer" type="Timer" parent="ReverseTimeEffect"]
+wait_time = 3.0
+
+[node name="Instructions" type="CanvasLayer" parent="."]
+
+[node name="Timer" type="Timer" parent="Instructions"]
+
+[node name="VBoxContainer2" type="HBoxContainer" parent="Instructions"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -458.0
+offset_top = -45.0
+offset_right = -1.0
+offset_bottom = -10.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 35
+alignment = 1
+
+[node name="Label2" type="Label" parent="Instructions/VBoxContainer2"]
+texture_filter = 1
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("5_otbr7")
+theme_override_font_sizes/font_size = 20
+text = "J - Speed down"
+
+[node name="Label4" type="Label" parent="Instructions/VBoxContainer2"]
+texture_filter = 1
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("5_otbr7")
+theme_override_font_sizes/font_size = 20
+text = "K - Pause/Play"
+
+[node name="Label3" type="Label" parent="Instructions/VBoxContainer2"]
+texture_filter = 1
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("5_otbr7")
+theme_override_font_sizes/font_size = 20
+text = "L - Speed up"
+
+[node name="Label" type="Label" parent="Instructions"]
+texture_filter = 1
+offset_left = 11.0
+offset_top = 15.0
+offset_right = 214.0
+offset_bottom = 50.0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("5_otbr7")
+theme_override_font_sizes/font_size = 30
+text = "SAMPLE RECORDING"
+
+[node name="WinOrLoose" type="CanvasLayer" parent="."]
+visible = false
+
+[node name="ColorRect" type="ColorRect" parent="WinOrLoose"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0.0941176, 0.945098)
+
+[node name="GameOver" type="TextureRect" parent="WinOrLoose"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("14_5wxa7")
+
+[node name="Win" type="TextureRect" parent="WinOrLoose"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("15_dm2qe")
+
 [connection signal="finished" from="AudioManager/Theme" to="AudioManager" method="_on_theme_finished"]
+[connection signal="timeout" from="ReverseTimeEffect/ReverseTimeTimer" to="." method="_on_reverse_time_timer_timeout"]

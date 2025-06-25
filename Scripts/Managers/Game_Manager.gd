@@ -13,6 +13,7 @@ class_name GameManager
 @export_category("UI")
 @export var ui_label: Label  # Optional status label
 @export var timer: Timer # Timer for UI messages
+@export var win_loose_canvas: CanvasLayer
 
 @export_category("Time Reversal")
 @export var reverse_time_effect: CanvasLayer
@@ -109,7 +110,7 @@ func start_time_traversal():
 func update_traversal_label():
 	if reverse_timer_label:
 		if is_traversing_time:
-			reverse_timer_label.text = "Time Left: "+ str(int(reverse_timer.time_left)+1)
+			reverse_timer_label.text = str(int(reverse_timer.time_left)+1)
 		else:
 			reverse_timer_label.text = "0"
 

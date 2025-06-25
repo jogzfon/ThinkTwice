@@ -12,13 +12,14 @@ config_version=5
 
 config/name="Think Twice"
 config/features=PackedStringArray("4.4", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="uid://bluvededq3v5i"
 
 [display]
 
-window/size/viewport_width=752
-window/size/viewport_height=448
+window/size/viewport_width=720
+window/size/viewport_height=405
 window/size/mode=3
+window/icon="uid://bluvededq3v5i"
 
 [input]
 

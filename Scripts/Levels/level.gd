@@ -1,10 +1,7 @@
 extends Node2D
-
-@export var colliders: Array[CollisionShape2D]
-@export var sprites: Array[Sprite2D]
+@export var colliders: Array[TileMapLayer]
 @export var respawn_point: Node2D
-
-var is_past:bool = false
+var is_past: bool = false
 
 func _process(delta: float) -> void:
 	toggle_mesh_colliders()
@@ -12,13 +9,9 @@ func _process(delta: float) -> void:
 func toggle_mesh_colliders():
 	if not is_past:
 		for collider in colliders:
-			collider.disabled = false
-		
-		for sprite in sprites:
-			sprite.modulate = Color.WHITE
+			collider.collision_enabled = true
+			collider.modulate = Color.WHITE
 	else:
 		for collider in colliders:
-			collider.disabled = true
-		
-		for sprite in sprites:
-			sprite.modulate = Color(Color.DARK_CYAN, 100)
+			collider.collision_enabled = false
+			collider.modulate = Color(Color.DARK_CYAN, 0.39) # Using alpha value 0-1 range

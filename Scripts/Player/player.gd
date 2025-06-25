@@ -41,6 +41,9 @@ extends CharacterBody2D
 @export var player_animation: AnimationPlayer
 @export var player_audio_manager: PlayerAudioManager
 
+@export_category("FX")
+@export var jump_fx: CPUParticles2D
+
 # Enhanced state tracking
 var coyote_timer: float = 0.0
 var jump_buffer_timer: float = 0.0
@@ -217,6 +220,7 @@ func handle_input(delta):
 		start_dash()
 
 func perform_jump():
+	jump_fx.emitting = true
 	velocity.y = jump_velocity
 	jump_buffer_timer = 0
 	coyote_timer = 0

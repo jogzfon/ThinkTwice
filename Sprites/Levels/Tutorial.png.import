@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cjbo5pw44n4cu"
-path="res://.godot/imported/Main-Character-Draft.png-5bc76dd07174f2e7fb068905b1e388e2.ctex"
+uid="uid://cxeywurahnr6b"
+path="res://.godot/imported/Tutorial.png-d5490023e697dd57e7110d0095f04631.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Sprites/Player/Main-Character-Draft.png"
-dest_files=["res://.godot/imported/Main-Character-Draft.png-5bc76dd07174f2e7fb068905b1e388e2.ctex"]
+source_file="res://Sprites/Levels/Tutorial.png"
+dest_files=["res://.godot/imported/Tutorial.png-d5490023e697dd57e7110d0095f04631.ctex"]
 
 [params]
 
